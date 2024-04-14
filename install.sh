@@ -200,9 +200,9 @@ function install_client {
     mainETHDev=$(ip route | head -n 1 | awk '{print $5}')
     ifconfigOutput=$(ifconfig)
     echo -e "${GREEN}ifconfig 输出如下：${RESET}\n$ifconfigOutput"
-    echo -e "${GREEN}脚本检测的主网卡是${RESET}： ${RED}$mainETHDev${RESET}"
-    echo -e "${YELLOW}请根据 ifconfig 的的信息检查网卡是否正确，如果不正确请现在手动输入正确的值${RESET}："
-    read -p "请输入默认网卡名，回车跳过: " new_ETHDEV
+    echo -e "${YELLOW}请根据 ifconfig 的的信息检查脚本所检测的网卡是否正确，如果不正确请修改${RESET}，${RED}输入错误的值可能会导致断网失联。${RESET}"
+    echo -e "${YELLOW}脚本检测的主网卡是${RESET}： ${GREEN}$mainETHDev${RESET}"
+    read -p "请输入你的主网卡名，回车跳过: " new_ETHDEV
     new_ETHDEV=${new_ETHDEV:-$mainETHDev}
 
     read -p "请输入 Gost 服务端的 IP 地址 (默认值: $current_REMOTEIP): " new_REMOTEIP
