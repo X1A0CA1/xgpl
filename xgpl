@@ -12,17 +12,22 @@ BYPASSIPS=("1.1.1.1" "1.0.0.1")
 ############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
 #########  If you're unsure of what you're doing, refrain from altering the following.  ##########
 set -eo pipefail
-mainGatewayIP=$(ip route show dev $ETHDEV | grep default | awk '{print $3}')
 mainIPaddr=$(ip -4 address show dev $ETHDEV | grep inet | awk '{print $2}' | cut -d'/' -f1)
 sshPort=$(ss -tlnp | grep ssh | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
 set +eo pipefail
 
+
 start_xgpl() {
-    if ip link show | awk {'print $2'} | grep "$TUNDEVICE"; then
+    tunDeviceExist=$(ip link show | awk '{print $2}' | grep "$TUNDEVICE")
+    if [ -n "$tunDeviceExist" ]; then
         echo "There is already a interface named $TUNDEVICE , please check it or change the TUNDEVICE variable in this script"
         exit 1
     fi
+
     echo "Starting xgpl..."
+
+    mainGatewayIP=$(ip route show dev $ETHDEV | grep default | awk '{print $3}')
+
     ip tuntap add dev $TUNDEVICE mode tun
     ifconfig $TUNDEVICE $TUNIPRANGE netmask $TUNNETMASK
 
@@ -31,6 +36,7 @@ start_xgpl() {
     ip rule add to $REMOTEIP lookup default
     ip route del default table main
     ip route add default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1) 
+    
     iptables -A OUTPUT -p tcp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
     iptables -A OUTPUT -p udp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
 
@@ -40,19 +46,32 @@ start_xgpl() {
         iptables -I OUTPUT 1 -d $ip -j ACCEPT
     done
 
-    /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device $TUNDEVICE &
+    nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device $TUNDEVICE > /dev/null 2>&1 &
     echo "xgpl started"
 }
 
 stop_xgpl(){
+    tunDeviceExist=$(ip link show | awk '{print $2}' | grep "$TUNDEVICE")
+    if [ -z "$tunDeviceExist" ]; then
+        echo "There is no interface named $TUNDEVICE, looks like xgpl is not running."
+        exit 1
+    fi
+
     echo "Stopping xgpl..."
+
+    mainGatewayIP=$(ip route show table default | grep default | awk '{print $3}')
+
     killall /usr/local/bin/tun2socks
+
     ip route del default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1)
     ip route add default via $mainGatewayIP dev $ETHDEV table main
     ip rule del to $REMOTEIP lookup default
     ip rule del from $mainIPaddr lookup default
+    ip route del default table default
+
     ifconfig $TUNDEVICE down
     ip tuntap del dev $TUNDEVICE mode tun
+    
 
     iptables -D OUTPUT -p tcp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
     iptables -D OUTPUT -p udp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
@@ -74,6 +93,25 @@ if [ "$EUID" -ne 0 ]; then
     echo "Please run as root"
     exit 1
 fi
+
+script_path=$(readlink -f "$0")
+
+declare -a variables=("TUNDEVICE" "TUNIPRANGE" "TUNNETMASK" "ETHDEV" "REMOTEIP" "REMOTEPORT" "USERNAME" "PASSWD")
+
+for var in "${variables[@]}"; do
+    if [ -z "${!var}" ]; then
+        echo "$var 变量为空，请修改本文件开头的变量"
+        echo "本文件的路径：$script_path"
+        exit 1
+    fi
+done
+
+if [ -z "${BYPASSIPS[0]}" ]; then
+    echo "BYPASSIPS 数组为空，请本文件开头的变量，修改为类似 BYPASSIPS=('1.1.1.1' '1.0.0.1') 的格式。"
+    echo "本文件的路径：$script_path"
+    exit 1
+fi
+
 
 case "$1" in
     start)

@@ -199,9 +199,9 @@ function install_client {
 
     mainETHDev=$(ip route | head -n 1 | awk '{print $5}')
     ifconfigOutput=$(ifconfig)
-    echo "ifconfig 输出如下：\n$ifconfigOutput"
-    echo "脚本检测的主网卡是： $mainETHDev"
-    echo "请根据 ifconfig 的的信息检查网卡是否正确，如果不正确请现在手动输入正确的值："
+    echo -e "${GREEN}ifconfig 输出如下：${RESET}\n$ifconfigOutput"
+    echo -e "${GREEN}脚本检测的主网卡是${RESET}： ${RED}$mainETHDev${RESET}"
+    echo -e "${YELLOW}请根据 ifconfig 的的信息检查网卡是否正确，如果不正确请现在手动输入正确的值${RESET}："
     read -p "请输入默认网卡名，回车跳过: " new_ETHDEV
     new_ETHDEV=${new_ETHDEV:-$mainETHDev}
 
@@ -271,14 +271,14 @@ function install_client {
     done
 
 
-    sed "s/TUNDEVICE=\"$current_TUNDEVICE\"/TUNDEVICE=\"$new_TUNDEVICE\"/; \
-        s/TUNIPRANGE=\"$current_TUNIPRANGE\"/TUNIPRANGE=\"$new_TUNIPRANGE\"/; \
-        s/TUNNETMASK=\"$current_TUNNETMASK\"/TUNNETMASK=\"$new_TUNNETMASK\"/; \
-        s/ETHDEV=\"$current_ETHDEV\"/ETHDEV=\"$new_ETHDEV\"/; \
-        s/REMOTEIP=\"$current_REMOTEIP\"/REMOTEIP=\"$new_REMOTEIP\"/; \
-        s/REMOTEPORT=\"$current_REMOTEPORT\"/REMOTEPORT=\"$new_REMOTEPORT\"/; \
-        s/USERNAME=\"$current_USERNAME\"/USERNAME=\"$new_USERNAME\"/; \
-        s/PASSWORD=\"$current_PASSWORD\"/PASSWORD=\"$new_PASSWORD\"/" \
+    sed "s%TUNDEVICE=\"$current_TUNDEVICE\"%TUNDEVICE=\"$new_TUNDEVICE\"%; \
+        s%TUNIPRANGE=\"$current_TUNIPRANGE\"%TUNIPRANGE=\"$new_TUNIPRANGE\"%; \
+        s%TUNNETMASK=\"$current_TUNNETMASK\"%TUNNETMASK=\"$new_TUNNETMASK\"%; \
+        s%ETHDEV=\"$current_ETHDEV\"%ETHDEV=\"$new_ETHDEV\"%; \
+        s%REMOTEIP=\"$current_REMOTEIP\"%REMOTEIP=\"$new_REMOTEIP\"%; \
+        s%REMOTEPORT=\"$current_REMOTEPORT\"%REMOTEPORT=\"$new_REMOTEPORT\"%; \
+        s%USERNAME=\"$current_USERNAME\"%USERNAME=\"$new_USERNAME\"%; \
+        s%PASSWORD=\"$current_PASSWORD\"%PASSWORD=\"$new_PASSWORD\"%" \
         /tmp/xgpl_tmp > /usr/local/bin/xgpl
 
     chmod +x /usr/local/bin/xgpl
@@ -303,7 +303,7 @@ EOF
     systemctl daemon-reload
     systemctl enable xgpl 
     systemctl start xgpl
-    echo -e "${GREEN}xgpl 服务已启动${RESET}\n如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。\n同时，如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着\n执行 systemctl restart xgpl.service 即可。"
+    echo -e "${GREEN}xgpl 服务已启动${RESET}\n如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。\n如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着执行 systemctl restart xgpl.service 即可。"
 }
 
 #### 主程序 ####
