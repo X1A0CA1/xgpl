@@ -69,7 +69,7 @@ function install_server {
     check_arch
     echo -e "${CYAN}安装依赖...${RESET}"
     apt update -qy >> /dev/null 2>&1
-    apt install net-tools curl wget unzip gzip lsof psmisc -qy >> /dev/null 2>&1
+    apt install bash net-tools curl wget unzip gzip lsof psmisc -qy >> /dev/null 2>&1
     echo -e "${CYAN}下载 Gost...${RESET}"
     if [[ "$_arch" == "amd64" ]]; then
         gost_url="https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz"
@@ -162,7 +162,7 @@ function install_client {
     check_arch
     echo -e "${CYAN}安装依赖...${RESET}"
     apt update -qy >> /dev/null 2>&1
-    apt install net-tools curl wget unzip gzip iptables vim iproute2 psmisc -qy >> /dev/null 2>&1
+    apt install bash net-tools curl wget unzip gzip iptables vim iproute2 psmisc -qy >> /dev/null 2>&1
     echo -e "${CYAN}下载 Tun2socks...${RESET}"
     if [[ "$_arch" == "amd64" ]]; then
         tun2socks_url="https://github.com/xjasonlyu/tun2socks/releases/download/v2.5.2/tun2socks-linux-amd64.zip"
@@ -284,6 +284,8 @@ function install_client {
     chmod +x /usr/local/bin/xgpl
     rm -f /tmp/xgpl_tmp
 
+    bash_path=$(which bash)
+
     cat > "/etc/systemd/system/xgpl.service" <<EOF
 [Unit]
 Description=XiaoCai Global Proxy for Linux Service
@@ -291,18 +293,20 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/xgpl start
-ExecStop=/usr/local/bin/xgpl stop
-ExecReload=/usr/local/bin/xgpl restart
+ExecStart=$bash_path /usr/local/bin/xgpl start
+ExecStop=$bash_path /usr/local/bin/xgpl stop
+ExecReload=$bash_path /usr/local/bin/xgpl restart
 restartRestart=on-failure
+User=root
+Group=root
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable xgpl 
-    systemctl start xgpl
+    systemctl enable xgpl.service
+    systemctl start xgpl.service
     echo -e "${GREEN}xgpl 服务已启动${RESET}\n如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。\n如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着执行 systemctl restart xgpl.service 即可。"
 }
 

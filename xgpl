@@ -46,7 +46,7 @@ start_xgpl() {
         iptables -I OUTPUT 1 -d $ip -j ACCEPT
     done
 
-    nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device $TUNDEVICE > /dev/null 2>&1 &
+    nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device $TUNDEVICE >> /var/log/tun2sockt.log &
     echo "xgpl started"
 }
 
