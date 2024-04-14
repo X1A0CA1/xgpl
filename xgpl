@@ -1,0 +1,89 @@
+TUNDEVICE="tun2"
+TUNIPRANGE="198.18.0.1/15"
+TUNNETMASK="255.254.0.0"
+ETHDEV="eth0"
+REMOTEIP="1.1.1.1"
+BYPASSIPS=("1.1.1.1" "1.0.0.1")
+
+
+############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
+#########  If you're unsure of what you're doing, refrain from altering the following.  ##########
+mainGatewayIP=$(ip route show dev $ETHDEV | grep default | awk '{print $3}')
+mainIPaddr=$(ip -4 address show dev $ETHDEV | grep inet | awk '{print $2}' | cut -d'/' -f1)
+sshPort=$(ss -tlnp | grep ssh | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
+
+start_xgpl() {
+    if ip link show | awk {'print $2'} | grep "$TUNDEVICE"; then
+        echo "There is already a interface named $TUNDEVICE , please check it or change the TUNDEVICE variable in this script"
+        exit 1
+    fi
+    echo "Starting xgpl..."
+    ip tuntap add dev $TUNDEVICE mode tun
+    ifconfig $TUNDEVICE $TUNIPRANGE netmask $TUNNETMASK
+
+    ip route add default via $mainGatewayIP dev $ETHDEV table default
+    ip rule add from $mainIPaddr lookup default
+    ip rule add to $REMOTEIP lookup default
+    ip route del default table main
+    ip route add default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1) 
+    iptables -A OUTPUT -p tcp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
+    iptables -A OUTPUT -p udp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
+
+    # WHITE LIST BYPASS
+    for ip in ${BYPASSIPS[@]}; do
+        ip rule add to $ip lookup default
+        iptables -I OUTPUT 1 -d $ip -j ACCEPT
+    done
+
+    systemctl start tun2socks.service
+    echo "xgpl started"
+}
+
+stop_xgpl(){
+    echo "Stopping xgpl..."
+    systemctl stop tun2socks.service
+    ip route del default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1)
+    ip route add default via $mainGatewayIP dev $ETHDEV table main
+    ip rule del to $gostIP lookup default
+    ip rule del from $mainIPaddr lookup default
+    ifconfig $TUNDEVICE down
+    ip tuntap del dev $TUNDEVICE mode tun
+
+    iptables -D OUTPUT -p tcp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
+    iptables -D OUTPUT -p udp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
+
+    for ip in ${BYPASSIPS[@]}; do
+        ip rule del to $ip lookup default
+        iptables -D OUTPUT -d $ip -j ACCEPT
+    done
+    echo "xgpl stopped"
+}
+
+restart_xgpl(){
+    stop_xgpl
+    start_xgpl
+}
+
+
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run as root"
+    exit 1
+fi
+
+case "$1" in
+    start)
+        start_xgpl
+        ;;
+    stop)
+        stop_xgpl
+        ;;
+    restart)
+        restart_xgpl
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0
