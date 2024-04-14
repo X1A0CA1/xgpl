@@ -147,8 +147,8 @@ function install_client {
         t2sFileName="tun2socks-linux-arm64"
     fi
     wget -qO- $tun2socks_url -O /tmp/tun2socks.zip >> /dev/null 2>&1
-    unzip -q /tmp/tun2socks.zip -d /usr/local/bin/ >> /dev/null 2>&1
-    mv "/usr/local/bin/$t2sFileName" "/usr/local/bin/tun2socks"
+    unzip -o -q /tmp/tun2socks.zip -d /usr/local/bin/
+    mv /usr/local/bin/$t2sFileName /usr/local/bin/tun2socks
     chmod +x /usr/local/bin/tun2socks
     echo "下载 Tun2socks 完成"
     echo "下载 xgpl..."
