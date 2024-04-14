@@ -151,8 +151,10 @@ EOF
     systemctl daemon-reload
     systemctl enable gost.service
     systemctl start gost.service
-    echo "${GREEN}Gost 服务已启动${RESET}\n如果有任何错误，请手动检查 /etc/systemd/system/gost.service 文件是否正确。\n同时，如果你想修改 Gost 的配置，请编辑 /etc/systemd/system/gost.service 文件，接着\n执行 systemctl daemon-reload && systemctl restart gost 即可。"
-    echo "\n\n${YELLOW}如果你发现有什么问题，请手动执行查看错误信息:${RESET} /usr/local/bin/gost -C $configFile"  
+    echo -e "${GREEN}Gost 服务已启动${RESET}"
+    echo -e "如果有任何错误，请手动检查 /etc/systemd/system/gost.service 文件是否正确。"
+    echo -e "如果你想修改 Gost 的配置，请编辑 $configFile 文件，并执行 systemctl restart gost 即可。"
+    echo -e "${YELLOW}如果你发现有什么问题，请手动执行查看错误信息:${RESET} /usr/local/bin/gost -C $configFile"  
 }
 
 
@@ -205,8 +207,19 @@ function install_client {
     read -p "请输入你的主网卡名，回车跳过: " new_ETHDEV
     new_ETHDEV=${new_ETHDEV:-$mainETHDev}
 
-    read -p "请输入 Gost 服务端的 IP 地址 (默认值: $current_REMOTEIP): " new_REMOTEIP
+    ipv4_regex='^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+    while true; do
+        read -p "请输入 Gost 服务端 IPv4 地址：" new_REMOTEIP
+        if [ -z "$new_REMOTEIP" ]; then
+            echo "IP 地址不能为空，请重新输入。"
+        elif [[ ! "$new_REMOTEIP" =~ $ipv4_regex ]]; then
+            echo "端口号只能包含数字，请重新输入"
+        else
+            break
+        fi
+    done
     new_REMOTEIP=${new_REMOTEIP:-$current_REMOTEIP}
+
     while true; do
         read -p "请输入 Gost 服务端的端口号：" new_REMOTEPORT
         if [ -z "$new_REMOTEPORT" ]; then
@@ -244,6 +257,8 @@ function install_client {
         fi
     done
     new_PASSWD=${new_PASSWD:-$current_PASSWD}
+
+    clear
     
     # 输出上述定义的变量
     echo -e "tun 设备名: ${YELLOW}$new_TUNDEVICE${RESET}"
@@ -278,7 +293,7 @@ function install_client {
         s%REMOTEIP=\"$current_REMOTEIP\"%REMOTEIP=\"$new_REMOTEIP\"%; \
         s%REMOTEPORT=\"$current_REMOTEPORT\"%REMOTEPORT=\"$new_REMOTEPORT\"%; \
         s%USERNAME=\"$current_USERNAME\"%USERNAME=\"$new_USERNAME\"%; \
-        s%PASSWORD=\"$current_PASSWORD\"%PASSWORD=\"$new_PASSWORD\"%" \
+        s%PASSWD=\"$current_PASSWD\"%PASSWD=\"$new_PASSWD\"%" \
         /tmp/xgpl_tmp > /usr/local/bin/xgpl
 
     chmod +x /usr/local/bin/xgpl
@@ -292,7 +307,7 @@ Description=XiaoCai Global Proxy for Linux Service
 After=network.target
 
 [Service]
-Type=simple
+Type=forking
 ExecStart=$bash_path /usr/local/bin/xgpl start
 ExecStop=$bash_path /usr/local/bin/xgpl stop
 ExecReload=$bash_path /usr/local/bin/xgpl restart
@@ -307,7 +322,11 @@ EOF
     systemctl daemon-reload
     systemctl enable xgpl.service
     systemctl start xgpl.service
-    echo -e "${GREEN}xgpl 服务已启动${RESET}\n如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。\n如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着执行 systemctl restart xgpl.service 即可。"
+    echo -e "${GREEN}xgpl 服务已启动${RESET}"
+    echo -e "如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。"
+    echo -e "如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着执行 systemctl restart xgpl.service 即可。"
+    echo -e "服务采用 systemctl 管理，可以使用 systemctl start xgpl.service 启动服务，systemctl stop xgpl.service 停止服务，systemctl restart xgpl.service 重启服务。"
+    echo -e "具体的 service 放在 /etc/systemd/system/xgpl.service。"
 }
 
 #### 主程序 ####

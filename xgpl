@@ -37,8 +37,8 @@ start_xgpl() {
     ip route del default table main
     ip route add default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1) 
     
-    iptables -A OUTPUT -p tcp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
-    iptables -A OUTPUT -p udp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
+    iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+    iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
 
     # WHITE LIST BYPASS
     for ip in ${BYPASSIPS[@]}; do
@@ -72,9 +72,9 @@ stop_xgpl(){
     ifconfig $TUNDEVICE down
     ip tuntap del dev $TUNDEVICE mode tun
     
-
-    iptables -D OUTPUT -p tcp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
-    iptables -D OUTPUT -p udp ! -d $REMOTEIP ! --sport $sshPort -j REJECT
+    iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
+    iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
+    
 
     for ip in ${BYPASSIPS[@]}; do
         ip rule del to $ip lookup default
