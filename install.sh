@@ -10,17 +10,42 @@ fi
 source /etc/profile
 
 #### 函数定义 ####
+
+# 文本颜色
+RED='\033[0;31m'        # 红色
+GREEN='\033[0;32m'      # 绿色
+YELLOW='\033[0;33m'     # 黄色
+BLUE='\033[0;34m'       # 蓝色
+PURPLE='\033[0;35m'     # 紫色
+CYAN='\033[0;36m'       # 青色
+WHITE='\033[0;37m'      # 白色
+BOLD_RED='\033[1;31m'       # 加粗红色
+BOLD_GREEN='\033[1;32m'     # 加粗绿色
+BOLD_YELLOW='\033[1;33m'    # 加粗黄色
+BOLD_BLUE='\033[1;34m'      # 加粗蓝色
+BOLD_PURPLE='\033[1;35m'    # 加粗紫色
+BOLD_CYAN='\033[1;36m'      # 加粗青色
+BOLD_WHITE='\033[1;37m'     # 加粗白色
+BG_RED='\033[0;41m'      # 红色背景
+BG_GREEN='\033[0;42m'    # 绿色背景
+BG_YELLOW='\033[0;43m'   # 黄色背景
+BG_BLUE='\033[0;44m'     # 蓝色背景
+BG_PURPLE='\033[0;45m'   # 紫色背景
+BG_CYAN='\033[0;46m'     # 青色背景
+BG_WHITE='\033[0;47m'    # 白色背景
+RESET='\033[0m'
+
 # 检查系统版本
 _system_version=$(cat /etc/issue)
 function check_version {
     if [[ "$_system_version" == *"Debian GNU/Linux 10"* ]]; then
-        echo "当前系统为 Debian 10 (Buster)。"
+        echo -e "当前系统为 ${GREEN}Debian 10 (Buster)${RESET}。"
     elif [[ "$_system_version" == *"Debian GNU/Linux 11"* ]]; then
-        echo "当前系统为 Debian 11 (Bullseye)。"
+        echo -e "当前系统为 ${GREEN}Debian 11 (Bullseye)${RESET}。"
     elif [[ "$_system_version" == *"Debian GNU/Linux 12"* ]]; then
-        echo "当前系统为 Debian 12 (Bookworm)。"
+        echo -e "当前系统为 ${GREEN}Debian 12 (Bookworm)${RESET}。"
     else
-        echo "当前系统不是 Debian 10、11 或 12。"
+        echo -e "${RED}当前系统不受支持。${RESET}"
         exit 1 
     fi
 }
@@ -29,11 +54,11 @@ function check_version {
 _arch=$(dpkg --print-architecture)
 function check_arch {
     if [[ "$_arch" == "amd64" ]]; then
-        echo "当前系统架构是 amd64。"
+        echo -e "当前系统架构是 ${GREEN}amd64${RESET}。"
     elif [[ "$_arch" == "arm64" ]]; then
-        echo "当前系统架构是 arm64。"
+        echo -e "当前系统架构是 ${GREEN}arm64${RESET}。"
     else
-        echo "当前系统架构不是 amd64 或 arm64，不受支持"
+        echo -e "${RED}当前系统架构不是 amd64 或 arm64，不受支持${RESET}"
         exit 1 
     fi
 }
@@ -42,10 +67,10 @@ function check_arch {
 function install_server {
     check_version
     check_arch
-    echo "安装依赖..."
+    echo -e "${CYAN}安装依赖...${RESET}"
     apt update -qy >> /dev/null 2>&1
     apt install net-tools curl wget unzip gzip lsof psmisc -qy >> /dev/null 2>&1
-    echo "下载 Gost..."
+    echo -e "${CYAN}下载 Gost...${RESET}"
     if [[ "$_arch" == "amd64" ]]; then
         gost_url="https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz"
     elif [[ "$_arch" == "arm64" ]]; then
@@ -53,7 +78,7 @@ function install_server {
     fi
     wget -qO- $gost_url | gzip -d > /usr/local/bin/gost
     chmod +x /usr/local/bin/gost
-    echo "下载 Gost 完成"
+    echo -e "${GREEN}下载 Gost 完成${RESET}"
     while true; do
         read -p "请输入用来连接 Sock5 的用户名：" gostUsername
         if [ -z "$gostUsername" ]; then
@@ -126,8 +151,8 @@ EOF
     systemctl daemon-reload
     systemctl enable gost.service
     systemctl start gost.service
-    echo "Gost 服务已启动，如果有任何错误，请手动检查 /etc/systemd/system/gost.service 文件是否正确。\n同时，如果你想修改 Gost 的配置，请编辑 /etc/systemd/system/gost.service 文件，接着\n执行 systemctl daemon-reload && systemctl restart gost 即可。"
-    echo "\n\n如果你发现有什么问题，请手动执行查看错误信息:"  
+    echo "${GREEN}Gost 服务已启动${RESET}\n如果有任何错误，请手动检查 /etc/systemd/system/gost.service 文件是否正确。\n同时，如果你想修改 Gost 的配置，请编辑 /etc/systemd/system/gost.service 文件，接着\n执行 systemctl daemon-reload && systemctl restart gost 即可。"
+    echo "\n\n${YELLOW}如果你发现有什么问题，请手动执行查看错误信息:${RESET} /usr/local/bin/gost -C $configFile"  
 }
 
 
@@ -135,10 +160,10 @@ EOF
 function install_client {
     check_version
     check_arch
-    echo "安装依赖..."
+    echo -e "${CYAN}安装依赖...${RESET}"
     apt update -qy >> /dev/null 2>&1
     apt install net-tools curl wget unzip gzip iptables vim iproute2 psmisc -qy >> /dev/null 2>&1
-    echo "下载 Tun2socks..."
+    echo -e "${CYAN}下载 Tun2socks...${RESET}"
     if [[ "$_arch" == "amd64" ]]; then
         tun2socks_url="https://github.com/xjasonlyu/tun2socks/releases/download/v2.5.2/tun2socks-linux-amd64.zip"
         t2sFileName="tun2socks-linux-amd64"
@@ -150,10 +175,10 @@ function install_client {
     unzip -o -q /tmp/tun2socks.zip -d /usr/local/bin/
     mv /usr/local/bin/$t2sFileName /usr/local/bin/tun2socks
     chmod +x /usr/local/bin/tun2socks
-    echo "下载 Tun2socks 完成"
-    echo "下载 xgpl..."
+    echo -e "${GREEN}Tun2socks 下载并安装完成.${RESET}"
+    echo -e "${CYAN}下载 xgpl...${RESET}"
     wget -qO- https://raw.githubusercontent.com/X1A0CA1/xgpl/main/xgpl > /tmp/xgpl_tmp
-    echo "下载 xgpl 完成"
+    echo -e "${GREEN}xgpl 下载完成.${RESET}"
     current_TUNDEVICE=$(grep '^TUNDEVICE=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_TUNIPRANGE=$(grep '^TUNIPRANGE=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_TUNNETMASK=$(grep '^TUNNETMASK=' /tmp/xgpl_tmp | cut -d '"' -f 2)
@@ -175,7 +200,7 @@ function install_client {
     mainETHDev=$(ip route | head -n 1 | awk '{print $5}')
     ifconfigOutput=$(ifconfig)
     echo "ifconfig 输出如下：\n$ifconfigOutput"
-    echo "脚本检测的主网卡是： $mainGatewayDev"
+    echo "脚本检测的主网卡是： $mainETHDev"
     echo "请根据 ifconfig 的的信息检查网卡是否正确，如果不正确请现在手动输入正确的值："
     read -p "请输入默认网卡名，回车跳过: " new_ETHDEV
     new_ETHDEV=${new_ETHDEV:-$mainETHDev}
@@ -219,6 +244,31 @@ function install_client {
         fi
     done
     new_PASSWD=${new_PASSWD:-$current_PASSWD}
+    
+    # 输出上述定义的变量
+    echo -e "tun 设备名: ${YELLOW}$new_TUNDEVICE${RESET}"
+    echo -e "tun 设备 IP 范围: ${YELLOW}$new_TUNIPRANGE${RESET}"
+    echo -e "tun 设备子网掩码: ${YELLOW}$new_TUNNETMASK${RESET}"
+    echo -e "默认网卡名: ${YELLOW}$new_ETHDEV${RESET}"
+    echo -e "Gost 服务端 IP 地址: ${YELLOW}$new_REMOTEIP${RESET}"
+    echo -e "Gost 服务端端口号: ${YELLOW}$new_REMOTEPORT${RESET}"
+    echo -e "Gost 服务端用户名: ${YELLOW}$new_USERNAME${RESET}"
+    echo -e "Gost 服务端密码: ${YELLOW}$new_PASSWD${RESET}"
+
+    while true; do
+        read -p "请确认输入的信息无误并继续(y/N)：" new_BYPASSIPS
+        case $new_BYPASSIPS in
+            [Yy]* )
+                break
+                ;;
+            [Nn]* )
+                exit 1
+                ;;
+            * )
+                echo "请输入 y 或 n"
+                ;;
+        esac
+    done
 
 
     sed "s/TUNDEVICE=\"$current_TUNDEVICE\"/TUNDEVICE=\"$new_TUNDEVICE\"/; \
@@ -253,7 +303,7 @@ EOF
     systemctl daemon-reload
     systemctl enable xgpl 
     systemctl start xgpl
-    echo "xgpl 服务已启动，如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。\n同时，如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着\n执行 systemctl restart xgpl.service 即可。"
+    echo -e "${GREEN}xgpl 服务已启动${RESET}\n如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。\n同时，如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着\n执行 systemctl restart xgpl.service 即可。"
 }
 
 #### 主程序 ####
