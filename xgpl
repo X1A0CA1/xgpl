@@ -8,9 +8,11 @@ BYPASSIPS=("1.1.1.1" "1.0.0.1")
 
 ############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
 #########  If you're unsure of what you're doing, refrain from altering the following.  ##########
+set -e 
 mainGatewayIP=$(ip route show dev $ETHDEV | grep default | awk '{print $3}')
 mainIPaddr=$(ip -4 address show dev $ETHDEV | grep inet | awk '{print $2}' | cut -d'/' -f1)
 sshPort=$(ss -tlnp | grep ssh | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
+set +e
 
 start_xgpl() {
     if ip link show | awk {'print $2'} | grep "$TUNDEVICE"; then
@@ -44,7 +46,7 @@ stop_xgpl(){
     systemctl stop tun2socks.service
     ip route del default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1)
     ip route add default via $mainGatewayIP dev $ETHDEV table main
-    ip rule del to $gostIP lookup default
+    ip rule del to $REMOTEIP lookup default
     ip rule del from $mainIPaddr lookup default
     ifconfig $TUNDEVICE down
     ip tuntap del dev $TUNDEVICE mode tun
