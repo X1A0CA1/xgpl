@@ -37,8 +37,8 @@ start_xgpl() {
     ip route del default table main
     ip route add default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1) 
     
-    iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
-    iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
+    # iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+    # iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
 
     # WHITE LIST BYPASS
     for ip in ${BYPASSIPS[@]}; do
@@ -46,7 +46,7 @@ start_xgpl() {
         iptables -I OUTPUT 1 -d $ip -j ACCEPT
     done
 
-    nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device $TUNDEVICE >> /var/log/tun2sockt.log &
+    nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device "$TUNDEVICE" >> /var/log/tun2sockt.log &
     echo "xgpl started"
 }
 
@@ -72,8 +72,8 @@ stop_xgpl(){
     ifconfig $TUNDEVICE down
     ip tuntap del dev $TUNDEVICE mode tun
     
-    iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
-    iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
+    # iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
+    # iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
     
 
     for ip in ${BYPASSIPS[@]}; do
