@@ -182,22 +182,21 @@ function install_client {
     wget -qO- https://raw.githubusercontent.com/X1A0CA1/xgpl/main/xgpl > /tmp/xgpl_tmp
     echo -e "${GREEN}xgpl 下载完成.${RESET}"
     current_TUNDEVICE=$(grep '^TUNDEVICE=' /tmp/xgpl_tmp | cut -d '"' -f 2)
-    current_TUNIPRANGE=$(grep '^TUNIPRANGE=' /tmp/xgpl_tmp | cut -d '"' -f 2)
-    current_TUNNETMASK=$(grep '^TUNNETMASK=' /tmp/xgpl_tmp | cut -d '"' -f 2)
+    current_TUNIPV4RANGE=$(grep '^TUNIPV4RANGE=' /tmp/xgpl_tmp | cut -d '"' -f 2)
+    current_TUNIPV6RANGE=$(grep '^TUNIPV6RANGE=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_ETHDEV=$(grep '^ETHDEV=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_REMOTEIP=$(grep '^REMOTEIP=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_REMOTEPORT=$(grep '^REMOTEPORT=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_USERNAME=$(grep '^USERNAME=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_PASSWD=$(grep '^PASSWD=' /tmp/xgpl_tmp | cut -d '"' -f 2)
-    current_BYPASSIPS=$(grep '^BYPASSIPS=(' /tmp/xgpl_tmp | cut -d '"' -f 2-3)
+    
 
     read -p "请输入 tun 设备名，回车跳过 (默认值: $current_TUNDEVICE): " new_TUNDEVICE
     new_TUNDEVICE=${new_TUNDEVICE:-$current_TUNDEVICE}
-    read -p "请输入 tun 设备的 IP 范围，回车跳过 (默认值: $current_TUNIPRANGE): " new_TUNIPRANGE
-    new_TUNIPRANGE=${new_TUNIPRANGE:-$current_TUNIPRANGE}
-    read -p "请输入 tun 设备的子网掩码，回车跳过 (默认值: $current_TUNNETMASK): " new_TUNNETMASK
-    new_TUNNETMASK=${new_TUNNETMASK:-$current_TUNNETMASK}
-    
+    read -p "请输入 tun 设备的 IP 范围，回车跳过 (默认值: $current_TUNIPV4RANGE): " new_TUNIPV4RANGE
+    new_TUNIPV4RANGE=${new_TUNIPV4RANGE:-$current_TUNIPV4RANGE}
+    read -p "请输入 tun 设备的 IPv6 地址范围，回车跳过 (默认值: $TUNIPV6RANGE): " new_TUNIPV6RANGE
+    new_TUNIPV6RANGE=${new_TUNIPV6RANGE:-$current_TUNIPV6RANGE}
 
     mainETHDev=$(ip route | head -n 1 | awk '{print $5}')
     ifconfigOutput=$(ifconfig)
@@ -262,8 +261,8 @@ function install_client {
     
     # 输出上述定义的变量
     echo -e "tun 设备名: ${YELLOW}$new_TUNDEVICE${RESET}"
-    echo -e "tun 设备 IP 范围: ${YELLOW}$new_TUNIPRANGE${RESET}"
-    echo -e "tun 设备子网掩码: ${YELLOW}$new_TUNNETMASK${RESET}"
+    echo -e "tun 设备 IPv4 范围: ${YELLOW}$new_TUNIPV4RANGE${RESET}"
+    echo -e "tun 设备 IPv6 范围: ${YELLOW}$new_TUNIPV6RANGE${RESET}"
     echo -e "默认网卡名: ${YELLOW}$new_ETHDEV${RESET}"
     echo -e "Gost 服务端 IP 地址: ${YELLOW}$new_REMOTEIP${RESET}"
     echo -e "Gost 服务端端口号: ${YELLOW}$new_REMOTEPORT${RESET}"
@@ -271,8 +270,8 @@ function install_client {
     echo -e "Gost 服务端密码: ${YELLOW}$new_PASSWD${RESET}"
 
     while true; do
-        read -p "请确认输入的信息无误并继续(y/N)：" new_BYPASSIPS
-        case $new_BYPASSIPS in
+        read -p "请确认输入的信息无误并继续(y/N)：" userConfirm
+        case $userConfirm in
             [Yy]* )
                 break
                 ;;
@@ -287,8 +286,8 @@ function install_client {
 
 
     sed "s%TUNDEVICE=\"$current_TUNDEVICE\"%TUNDEVICE=\"$new_TUNDEVICE\"%; \
-        s%TUNIPRANGE=\"$current_TUNIPRANGE\"%TUNIPRANGE=\"$new_TUNIPRANGE\"%; \
-        s%TUNNETMASK=\"$current_TUNNETMASK\"%TUNNETMASK=\"$new_TUNNETMASK\"%; \
+        s%TUNIPV4RANGE=\"$current_TUNIPV4RANGE\"%TUNIPV4RANGE=\"$new_TUNIPV4RANGE\"%; \
+        s%TUNIPV6RANGE=\"$current_TUNIPV6RANGE\"%TUNIPV6RANGE=\"$new_TUNIPV6RANGE\"%; \
         s%ETHDEV=\"$current_ETHDEV\"%ETHDEV=\"$new_ETHDEV\"%; \
         s%REMOTEIP=\"$current_REMOTEIP\"%REMOTEIP=\"$new_REMOTEIP\"%; \
         s%REMOTEPORT=\"$current_REMOTEPORT\"%REMOTEPORT=\"$new_REMOTEPORT\"%; \
@@ -301,17 +300,26 @@ function install_client {
 
     bash_path=$(which bash)
 
+    echo -e "${CYAN}将创建名为 bypass 的用户，这个用户的所有流量均不会经过代理。${RESET}"
+    echo -e "如果你有特殊要求，比如多个不被代理流量的用户、自定义用户名，请自行编辑 /usr/local/bin/xgpl 文件。"
+    useradd -m bypass --shell $bash_path
+
     cat > "/etc/systemd/system/xgpl.service" <<EOF
 [Unit]
 Description=XiaoCai Global Proxy for Linux Service
-After=network.target
+After=network.target network-online.target multi-user.target systemd-networkd.service
+Befor=shutdown.target
+Wants=network.target network-online.target systemd-networkd.service
+Requires=network.target network-online.target systemd-networkd.service
 
 [Service]
 Type=forking
 ExecStart=$bash_path /usr/local/bin/xgpl start
 ExecStop=$bash_path /usr/local/bin/xgpl stop
 ExecReload=$bash_path /usr/local/bin/xgpl restart
-restartRestart=on-failure
+ExecRestart=$bash_path /usr/local/bin/xgpl restart
+KillMode=mixed
+Restart=on-failure
 User=root
 Group=root
 
@@ -322,6 +330,7 @@ EOF
     systemctl daemon-reload
     systemctl enable xgpl.service
     systemctl start xgpl.service
+    
     echo -e "${GREEN}xgpl 服务已启动${RESET}"
     echo -e "如果有任何错误，请手动检查 /usr/local/bin/xgpl 文件是否正确。"
     echo -e "如果你想修改配置，请编辑 /usr/local/bin/xgpl 文件，接着执行 systemctl restart xgpl.service 即可。"
