@@ -258,7 +258,7 @@ function install_client {
     done
     new_PASSWD=${new_PASSWD:-$current_PASSWD}
 
-    read -p "是否在代理下线的时候阻止所有流量？1=阻止，0=不阻止 (默认值: $current_ONLYPROXYCONN): " new_ONLYPROXYCONN
+    read -p "是否在关闭本服务的的时候阻止所有流量？1=阻止，0=不阻止 (默认值: $current_ONLYPROXYCONN): " new_ONLYPROXYCONN
     new_ONLYPROXYCONN=${new_ONLYPROXYCONN:-$current_ONLYPROXYCONN}
 
     clear
@@ -314,7 +314,7 @@ function install_client {
 [Unit]
 Description=XiaoCai Global Proxy for Linux Service
 After=network.target network-online.target multi-user.target systemd-networkd.service
-Befor=shutdown.target
+Before=shutdown.target
 Wants=network.target network-online.target systemd-networkd.service
 Requires=network.target network-online.target systemd-networkd.service
 
@@ -323,7 +323,6 @@ Type=forking
 ExecStart=$bash_path /usr/local/bin/xgpl start
 ExecStop=$bash_path /usr/local/bin/xgpl stop
 ExecReload=$bash_path /usr/local/bin/xgpl restart
-ExecRestart=$bash_path /usr/local/bin/xgpl restart
 KillMode=mixed
 Restart=on-failure
 User=root
@@ -346,8 +345,8 @@ EOF
 
 #### 主程序 ####
 echo "请选择要执行的操作："
-echo "1. 安装服务端"
-echo "2. 安装客户端"
+echo "1. 安装服务端（Gost）"
+echo "2. 安装客户端（Tun2Socks）"
 read -p "请输入选项编号：" choice
 
 case $choice in
