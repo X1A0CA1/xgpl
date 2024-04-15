@@ -189,13 +189,14 @@ function install_client {
     current_REMOTEPORT=$(grep '^REMOTEPORT=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_USERNAME=$(grep '^USERNAME=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     current_PASSWD=$(grep '^PASSWD=' /tmp/xgpl_tmp | cut -d '"' -f 2)
+    current_ONLYPROXYCONN=$(grep '^ONLYPROXYCONN=' /tmp/xgpl_tmp | cut -d '"' -f 2)
     
 
     read -p "请输入 tun 设备名，回车跳过 (默认值: $current_TUNDEVICE): " new_TUNDEVICE
     new_TUNDEVICE=${new_TUNDEVICE:-$current_TUNDEVICE}
     read -p "请输入 tun 设备的 IP 范围，回车跳过 (默认值: $current_TUNIPV4RANGE): " new_TUNIPV4RANGE
     new_TUNIPV4RANGE=${new_TUNIPV4RANGE:-$current_TUNIPV4RANGE}
-    read -p "请输入 tun 设备的 IPv6 地址范围，回车跳过 (默认值: $TUNIPV6RANGE): " new_TUNIPV6RANGE
+    read -p "请输入 tun 设备的 IPv6 地址范围，回车跳过 (默认值: $current_TUNIPV6RANGE): " new_TUNIPV6RANGE
     new_TUNIPV6RANGE=${new_TUNIPV6RANGE:-$current_TUNIPV6RANGE}
 
     mainETHDev=$(ip route | head -n 1 | awk '{print $5}')
@@ -257,6 +258,9 @@ function install_client {
     done
     new_PASSWD=${new_PASSWD:-$current_PASSWD}
 
+    read -p "是否在代理下线的时候阻止所有流量？1=阻止，0=不阻止 (默认值: $current_ONLYPROXYCONN): " new_ONLYPROXYCONN
+    new_ONLYPROXYCONN=${new_ONLYPROXYCONN:-$current_ONLYPROXYCONN}
+
     clear
     
     # 输出上述定义的变量
@@ -268,6 +272,7 @@ function install_client {
     echo -e "Gost 服务端端口号: ${YELLOW}$new_REMOTEPORT${RESET}"
     echo -e "Gost 服务端用户名: ${YELLOW}$new_USERNAME${RESET}"
     echo -e "Gost 服务端密码: ${YELLOW}$new_PASSWD${RESET}"
+    echo -e "代理下线阻止所有流量(1=阻止，0=不阻止): ${YELLOW}$new_ONLYPROXYCONN${RESET}"
 
     while true; do
         read -p "请确认输入的信息无误并继续(y/N)：" userConfirm
@@ -292,7 +297,8 @@ function install_client {
         s%REMOTEIP=\"$current_REMOTEIP\"%REMOTEIP=\"$new_REMOTEIP\"%; \
         s%REMOTEPORT=\"$current_REMOTEPORT\"%REMOTEPORT=\"$new_REMOTEPORT\"%; \
         s%USERNAME=\"$current_USERNAME\"%USERNAME=\"$new_USERNAME\"%; \
-        s%PASSWD=\"$current_PASSWD\"%PASSWD=\"$new_PASSWD\"%" \
+        s%PASSWD=\"$current_PASSWD\"%PASSWD=\"$new_PASSWD\"% \
+        s%ONLYPROXYCONN=\"$current_ONLYPROXYCONN\"%ONLYPROXYCONN=\"$new_ONLYPROXYCONN\"%" \
         /tmp/xgpl_tmp > /usr/local/bin/xgpl
 
     chmod +x /usr/local/bin/xgpl

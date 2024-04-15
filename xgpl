@@ -9,21 +9,23 @@ REMOTEPORT="1080"
 USERNAME="username"
 PASSWD="password"
 BYPASSUSERS=("bypass")
-BYPASSIPS=("1.1.1.1" "1.0.0.1")
+BYPASSIPV4S=("1.1.1.1" "1.0.0.1")
+ONLYPROXYCONN=1
 
 
 ############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
 #########  If you're unsure of what you're doing, refrain from altering the following.  ##########
 mainIPv4Addr=$(ip -4 address show | grep $ETHDEV | grep global | grep inet | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
-mainIPv6Addr=$(ip -6 address show | grep $ETHDEV | grep global | grep inet6 | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
+mainIPv6Addr=$(ip -6 address show | grep -A8 $ETHDEV | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
+mainIPv6AddrMask=$(ip -6 address show | grep -A8 $ETHDEV | grep global | awk '{print $2}' | cut -d '/' -f2 | head -n 1)
 sshPort=$(ss -tlnp | grep ssh | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
 if [ -z "$mainIPv4Addr" ]; then
-    echo "FATAL: Can't find a global IPv4 address, please check your network configuration."
+    echo -e "FATAL: Can't find a global IPv4 address, please check your network configuration."
     exit 1
 fi
 
 if [ -z "$mainIPv6Addr" ]; then
-    echo "WARNING: Can't find a global IPv6 address. You may meet some unexpected errors :)."
+    echo -e "WARNING: Can't find a global IPv6 address. You may meet some unexpected errors :)."
 fi
 
 
@@ -37,38 +39,38 @@ check_iptables_rule_exist() {
 start_xgpl() {
     tunDeviceExist=$(ip link show | awk '{print $2}' | grep "$TUNDEVICE" | head -n 1)
     if [ -n "$tunDeviceExist" ]; then
-        echo "There is already a interface named $TUNDEVICE , please check it or change the TUNDEVICE variable in this script"
+        echo -e "There is already a interface named $TUNDEVICE , please check it or change the TUNDEVICE variable in this script"
         exit 0
     fi
 
-    echo "LOG: Starting xgpl..."
-    echo "LOG: Main IPv4 address: $mainIPv4Addr, Main IPv6 address: $mainIPv6Addr"
-    echo "LOG: Creating interface $TUNDEVICE..."
-    echo "DEBUG: Current ip links:\n`ip link list`" 
+    echo -e "LOG: Starting xgpl..."
+    echo -e "LOG: Main IPv4 address: $mainIPv4Addr, Main IPv6 address: $mainIPv6Addr"
+    echo -e "LOG: Creating interface $TUNDEVICE..."
+    echo -e "DEBUG: Current ip links:\n`ip link list`" 
     ip tuntap add dev $TUNDEVICE mode tun
     ip -4 addr add $TUNIPV4RANGE dev $TUNDEVICE
     ip -6 addr add $TUNIPV6RANGE dev $TUNDEVICE
     ifconfig $TUNDEVICE up
 
-    echo "LOG: Setting up routing and iptables rules..."
+    echo -e "LOG: Setting up routing and iptables rules..."
     # Set up routing
     TunIPv4Addr=$(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1 | head -n 1)
     # TunIPv6Addr=$(ip -6 address show dev $TUNDEVICE | grep inet6 | awk '{print $2}' | cut -d'/' -f1 | head -n 1)  # 看起来没啥用
     
-    echo "LOG: Flush default table..."
+    echo -e "LOG: Flush default table... If an Error is thrown here, it's expected behavior, don't be fuck up."
     # flush default table
     ip -4 route flush table default
     ip -6 route flush table default
 
     # Set up default routing table
-    echo "LOG: Setting up default routing table..."
+    echo -e "LOG: Setting up default routing table..."
     ip -4 route add default via $TunIPv4Addr dev $TUNDEVICE table default
     ip -6 route add ::/1 dev $TUNDEVICE table default
     
     # Copy the main routing table to the default table
-    echo "LOG: Copy the main routing table to the default table..."
-    echo "DEBUG: Current IPv4 main routing table:\n`ip -4 route show table main`"
-    echo "DEBUG: Current IPv6 main routing table:\n`ip -6 route show table main`"
+    echo -e "LOG: Copy the main routing table to the default table..."
+    echo -e "DEBUG: Current IPv4 main routing table:\n`ip -4 route show table main`"
+    echo -e "DEBUG: Current IPv6 main routing table:\n`ip -6 route show table main`"
     ip -4 route show table main | grep -Ev '^default|linkdown' | while read ROUTE ; do
             ip -4 route add table default $ROUTE
     done
@@ -77,110 +79,149 @@ start_xgpl() {
     done
 
     # Set up route rules
-    echo "LOG: Setting up route rules..."
-    echo "DEBUG: Current IPv4 routing rules:\n`ip -4 rule list`"
-    echo "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
+    echo -e "LOG: Setting up route rules..."
+    echo -e "DEBUG: Current IPv4 routing rules:\n`ip -4 rule list`"
+    echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
     ip -4 rule add to $REMOTEIP lookup main prio 10000
     ip -4 rule add from $mainIPv4Addr lookup main prio 10001
     ip -4 rule add from all lookup default prio 10002
 
-    ip -6 rule add from $mainIPv6Addr lookup main prio 10001
+    ip -6 rule add from $mainIPv6Addr/$mainIPv6AddrMask lookup main prio 10001
     ip -6 rule add from all lookup default prio 10002
     
     # If a watermarked packet is encountered, It means that the packet needs to be routing to main table. 
-    ip -4 rule add fwmark 10000 lookup main
-    ip -6 rule add fwmark 10000 lookup main
+    ip -4 rule add fwmark 23333 lookup main
+    ip -6 rule add fwmark 23333 lookup main
 
     # Set up iptables rules
-    echo "LOG: Setting up iptables rules..."
-    echo "DEBUG: mangle table:\n `iptables -t mangle -L`"
-    # Actually this could be solved in the filter table, but I like to unify :) So I'm using mangle tables.
-    if ! check_iptables_rule_exist "-t mangle -I POSTROUTING 1 -p tcp --sport $sshPort -j ACCEPT"; then
-        iptables -t mangle -I POSTROUTING 1 -p tcp --sport $sshPort -j ACCEPT
+    echo -e "LOG: Setting up iptables rules..."
+    echo -e "DEBUG: mangle table:\n `iptables -t mangle -L`"
+
+    # check if ONLYPROXYCONN was set
+    if check_iptables_rule_exist "-A OUTPUT ! -d $REMOTEIP -j REJECT"; then
+        echo -e "LOG: It looks like ONLYPROXYCONN was set to 1 the last time xgpl stopped, delete iptables rules to unblock traffic..."
+        echo -e "DEBUG: Current iptables rules:\n`ip6tables -L`"
+        ip6tables -D OUTPUT -j REJECT
+        ip6tables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
+
+        echo -e "DEBUG: Current iptables rules:\n `iptables -L`"
+        iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
+        iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
     fi
 
-    if ! check_iptables_rule_exist "-t mangle -A POSTROUTING ! -d $REMOTEIP -j DROP"; then
-        iptables -t mangle -A POSTROUTING ! -d $REMOTEIP -j DROP
+    # add iptables rules
+    if ! check_iptables_rule_exist "-t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr"; then
+        iptables -t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr
+        ip6tables -t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv6Addr
     fi
 
     for BYPASSUSER in ${BYPASSUSERS[@]}; do
         if ! check_iptables_rule_exist "-t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333"; then
             iptables -t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
+            ip6tables -t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
         fi
     done
 
-    for BYPASSIP in ${BYPASSIPS[@]}; do
-        if ! check_iptables_rule_exist "-t mangle -I POSTROUTING 1 -d $BYPASSIP -j ACCEPT"; then
-            iptables -t mangle -I POSTROUTING 1 -d $BYPASSIP -j ACCEPT
-        fi
-        if ! check_iptables_rule_exist "-t mangle -A OUTPUT -d $BYPASSIP -j MARK --set-mark 23333"; then
-            iptables -t mangle -A OUTPUT -d $BYPASSIP -j MARK --set-mark 23333
+    for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
+        if ! check_iptables_rule_exist "-t mangle -A OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333"; then
+            iptables -t mangle -A OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333
         fi
     done
 
-    echo "LOG: Starting tun2socks..."
+    echo -e "LOG: Starting tun2socks..."
     nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device "$TUNDEVICE" >> /var/log/tun2sockt.log &
-    echo "LOG: xgpl started"
-    # mainGatewayIP=$(ip route show dev $ETHDEV | grep default | awk '{print $3}'| head -n 1)
-    # ip tuntap add dev $TUNDEVICE mode tun
-    # ifconfig $TUNDEVICE $TUNIPRANGE netmask $TUNNETMASK
-    # ip -6 addr add $TUNIPV6RANGE dev $TUNDEVICE
-
-    # # TODO IPv6 也像 IPV4 这样处理，入站链接直接走主网卡，出站链接走 tun2socks
-    # ip -6 route add ::/1 dev $TUNDEVICE
-    
-    # ip route add default via $mainGatewayIP dev $ETHDEV table default
-    # ip rule add from $mainIPaddr lookup default
-    # ip rule add to $REMOTEIP lookup default
-    # ip route del default table main
-    # ip route add default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1 | head -n 1) 
-    
-    # # iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
-    # # iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
-
-    # # WHITE LIST BYPASS
-    # for ip in ${BYPASSIPS[@]}; do
-    #     ip rule add to $ip lookup default
-    #     iptables -I OUTPUT 1 -d $ip -j ACCEPT
-    # done
-
-    # nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device "$TUNDEVICE" >> /var/log/tun2sockt.log &
-    # echo "xgpl started"
+    echo -e "LOG: xgpl started"
 }
+
 
 stop_xgpl(){
     tunDeviceExist=$(ip link show | awk '{print $2}' | grep "$TUNDEVICE" | head -n 1)
     if [ -z "$tunDeviceExist" ]; then
-        echo "There is no interface named $TUNDEVICE, looks like xgpl is not running."
+        echo -e "There is no interface named $TUNDEVICE, looks like xgpl is not running."
         exit 0
     fi
 
-    echo "Stopping xgpl..."
-
-    mainGatewayIP=$(ip route show table default | grep default | awk '{print $3}' | head -n 1)
-
+    echo -e "LOG: Killall tun2socks..."
     killall /usr/local/bin/tun2socks
 
-    ip -6 route del ::/1 dev $TUNDEVICE
+    echo -e "LOG: Flushing iptables rules..."
+    echo -e "DEBUG: need delete iptables rule: $RMIPTABLESRULE \nmangle table:\n `iptables -t mangle -L`"
+    for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
+        iptables -t mangle -D OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333
+    done
 
-    ip route del default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1 | head -n 1)
-    ip route add default via $mainGatewayIP dev $ETHDEV table main
-    ip rule del to $REMOTEIP lookup default
-    ip rule del from $mainIPaddr lookup default
-    ip route del default table default
-    
+    for BYPASSUSER in ${BYPASSUSERS[@]}; do
+        iptables -t mangle -D OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
+        ip6tables -t mangle -D OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
+    done
+
+    iptables -t nat -D POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr
+    ip6tables -t nat -D POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv6Addr
+
+    echo -e "LOG: Flushing routing rules..."
+    echo -e "DEBUG: Current IPv4 routing rules:\n`ip -4 rule list`"
+    echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
+    ip -4 rule del fwmark 23333 lookup main
+    ip -6 rule del fwmark 23333 lookup main
+
+    ip -6 rule del prio 10002
+    ip -6 rule del prio 10001
+
+    ip -4 rule del prio 10002
+    ip -4 rule del prio 10001
+    ip -4 rule del prio 10000
+
+    echo -e "LOG: Flushing routing tables..."
+    echo -e "DEBUG: Current IPv4 routing table:\n`ip -4 route show table default`"
+    echo -e "DEBUG: Current IPv6 routing table:\n`ip -6 route show table default`"
+    ip -4 route flush table default
+    ip -6 route flush table default
+
+    echo -e "LOG: Deleting interface $TUNDEVICE..."
     ifconfig $TUNDEVICE down
     ip tuntap del dev $TUNDEVICE mode tun
+
+    if [ $ONLYPROXYCONN -eq 1 ]; then
+        echo -e "LOG: ONLYPROXYCONN set to 1, add iptables rules to block traffic..."
+        echo -e "DEBUG: Current iptables rules:\n`iptables -L`"
+        iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+        iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
+
+        echo -e "DEBUG: Current ip6tables rules:\n `ip6tables -L`"
+        ip6tables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+        ip6tables -A OUTPUT -j REJECT
+    fi
+
+
+    # iptables -t mangle -D POSTROUTING ! -d $REMOTEIP -j DROP
+    # iptables -t mangle -D POSTROUTING 1 -p tcp --sport $sshPort -j ACCEPT
+
+    # echo -e "Stopping xgpl..."
+
+    # mainGatewayIP=$(ip route show table default | grep default | awk '{print $3}' | head -n 1)
+
+    # killall /usr/local/bin/tun2socks
+
+    # ip -6 route del ::/1 dev $TUNDEVICE
+
+    # ip route del default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1 | head -n 1)
+    # ip route add default via $mainGatewayIP dev $ETHDEV table main
+    # ip rule del to $REMOTEIP lookup default
+    # ip rule del from $mainIPaddr lookup default
+    # ip route del default table default
     
-    # iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
-    # iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
+    # ifconfig $TUNDEVICE down
+    # ip tuntap del dev $TUNDEVICE mode tun
+    
+    # # iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
+    # # iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
     
 
-    for ip in ${BYPASSIPS[@]}; do
-        ip rule del to $ip lookup default
-        iptables -D OUTPUT -d $ip -j ACCEPT
-    done
-    echo "xgpl stopped"
+    # for ip in ${BYPASSIPV4S[@]}; do
+    #     ip rule del to $ip lookup default
+    #     iptables -D OUTPUT -d $ip -j ACCEPT
+    # done
+    # echo -e "xgpl stopped"
 }
 
 restart_xgpl(){
@@ -190,7 +231,7 @@ restart_xgpl(){
 
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root"
+    echo -e "Please run as root"
     exit 1
 fi
 
@@ -200,21 +241,21 @@ declare -a variables=("TUNDEVICE" "TUNIPV4RANGE" "TUNIPV6RANGE" "ETHDEV" "REMOTE
 
 for var in "${variables[@]}"; do
     if [ -z "${!var}" ]; then
-        echo "$var 变量为空，请修改本文件开头的变量"
-        echo "本文件的路径：$script_path"
+        echo -e "$var 变量为空，请修改本文件开头的变量"
+        echo -e "本文件的路径：$script_path"
         exit 0
     fi
 done
 
-if [ -z "${BYPASSIPS[0]}" ]; then
-    echo "BYPASSIPS 数组为空，请本文件开头的变量，修改为类似 BYPASSIPS=('1.1.1.1' '1.0.0.1') 的格式。"
-    echo "本文件的路径：$script_path"
+if [ -z "${BYPASSIPV4S[0]}" ]; then
+    echo -e "BYPASSIPV4S 数组为空，请本文件开头的变量，修改为类似 BYPASSIPV4S=('1.1.1.1' '1.0.0.1') 的格式。"
+    echo -e "本文件的路径：$script_path"
     exit 0
 fi
 
 if [ -z "${BYPASSUSERS[0]}" ]; then
-    echo "BYPASSUSERS 数组为空，请本文件开头的变量，修改为类似 BYPASSUSERS=('bypass') 的格式。"
-    echo "本文件的路径：$script_path"
+    echo -e "BYPASSUSERS 数组为空，请本文件开头的变量，修改为类似 BYPASSUSERS=('bypass') 的格式。"
+    echo -e "本文件的路径：$script_path"
     exit 0
 fi
 
@@ -230,7 +271,7 @@ case "$1" in
         restart_xgpl
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart}"
+        echo -e "Usage: $0 {start|stop|restart}"
         exit 1
         ;;
 esac
