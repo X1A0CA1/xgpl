@@ -19,9 +19,9 @@ DEBUG=0
 
 ############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
 #########  If you're unsure of what you're doing, refrain from altering the following.  ##########
-mainIPv4Addr=$(ip -4 address show | grep $ETHDEV | grep global | grep inet | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
-mainIPv6Addr=$(ip -6 address show | grep -A8 $ETHDEV | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
-mainIPv6AddrMask=$(ip -6 address show | grep -A8 $ETHDEV | grep global | awk '{print $2}' | cut -d '/' -f2 | head -n 1)
+mainIPv4Addr=$(ip -4 address show dev $ETHDEV | grep inet | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
+mainIPv6Addr=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
+mainIPv6AddrMask=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f2 | head -n 1)
 sshPort=$(ss -tlnp | grep ssh | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
 if [ -z "$mainIPv4Addr" ]; then
     echo -e "FATAL: Can't find a global IPv4 address, please check your network configuration."
