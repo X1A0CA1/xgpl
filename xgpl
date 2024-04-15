@@ -14,6 +14,7 @@ BYPASSUSERS=("bypass")
 BYPASSIPV4S=("1.1.1.1" "1.0.0.1")
 BYPASSIPV6S=("2606:4700:4700::1111" "2606:4700:4700::1001")
 
+DEBUG=0
 
 
 ############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
@@ -32,13 +33,6 @@ if [ -z "$mainIPv6Addr" ]; then
 fi
 script_path=$(readlink -f "$0")
 
-
-check_iptables_rule_exist() {
-    local rule="$1"
-    iptables -C "$rule" >/dev/null 2>&1
-    return $?
-}
-
 check_variable() {
     if [[ -z "$1" ]]; then
         echo -e "Error: $2 is not set, please edit $script_path"
@@ -55,9 +49,11 @@ start_xgpl() {
     fi
 
     echo -e "LOG: Starting xgpl..."
-    echo -e "LOG: Main IPv4 address: $mainIPv4Addr, Main IPv6 address: $mainIPv6Addr"
+    echo -e "LOG: Main IPv4 address: $mainIPv4Addr, Main IPv6 address: $mainIPv6Addr/$mainIPv6AddrMask"
     echo -e "LOG: Creating interface $TUNDEVICE..."
-    echo -e "DEBUG: Current ip links:\n`ip link list`" 
+    if [[ $DEBUG -eq 1 ]]; then
+        echo -e "DEBUG: Current ip links:\n`ip link list`"
+    fi
     ip tuntap add dev $TUNDEVICE mode tun
     ip -4 addr add $TUNIPV4RANGE dev $TUNDEVICE
     ip -6 addr add $TUNIPV6RANGE dev $TUNDEVICE
@@ -80,8 +76,10 @@ start_xgpl() {
     
     # Copy the main routing table to the default table
     echo -e "LOG: Copy the main routing table to the default table..."
-    echo -e "DEBUG: Current IPv4 main routing table:\n`ip -4 route show table main`"
-    echo -e "DEBUG: Current IPv6 main routing table:\n`ip -6 route show table main`"
+    if [[ $DEBUG -eq 1 ]]; then
+        echo -e "DEBUG: Current IPv4 main routing table:\n`ip -4 route show table main`"
+        echo -e "DEBUG: Current IPv6 main routing table:\n`ip -6 route show table main`"
+    fi
     ip -4 route show table main | grep -Ev '^default|linkdown' | while read ROUTE ; do
             ip -4 route add table default $ROUTE
     done
@@ -91,13 +89,17 @@ start_xgpl() {
 
     # Set up route rules
     echo -e "LOG: Setting up route rules..."
-    echo -e "DEBUG: Current IPv4 routing rules:\n`ip -4 rule list`"
-    echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
+    if [[ $DEBUG -eq 1 ]]; then
+        echo -e "DEBUG: Current IPv4 routing rules:\n`ip -4 rule list`"
+        echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
+    fi
     ip -4 rule add to $REMOTEIP lookup main prio 10000
     ip -4 rule add from $mainIPv4Addr lookup main prio 10001
     ip -4 rule add from all lookup default prio 10002
 
-    ip -6 rule add from $mainIPv6Addr/$mainIPv6AddrMask lookup main prio 10001
+    if [[ -n "$mainIPv6Addr" && -n "$mainIPv6AddrMask" ]]; then
+        ip -6 rule add from $mainIPv6Addr/$mainIPv6AddrMask lookup main prio 10001
+    fi
     ip -6 rule add from all lookup default prio 10002
     
     # If a watermarked packet is encountered, It means that the packet needs to be routing to main table. 
@@ -106,19 +108,20 @@ start_xgpl() {
 
     # Set up iptables rules
     echo -e "LOG: Setting up iptables rules..."
-    echo -e "DEBUG: mangle table:\n `iptables -t mangle -L`"
-
     # check if ONLYPROXYCONN was set
-    if check_iptables_rule_exist "-A OUTPUT ! -d $REMOTEIP -j REJECT"; then
+    if iptables -C OUTPUT ! -d $REMOTEIP -j REJECT > /dev/null; then
         echo -e "LOG: It looks like ONLYPROXYCONN was set to 1 the last time xgpl stopped, delete iptables rules to unblock traffic..."
-        echo -e "DEBUG: Current iptables rules:\n`ip6tables -L`"
+        if [[ $DEBUG -eq 1 ]]; then
+            echo -e "DEBUG: Current iptables rules:\n`iptables -L`"
+            echo -e "DEBUG: Current ip6tables rules:\n`ip6tables -L`"
+        fi
+
         ip6tables -D OUTPUT -j REJECT
         ip6tables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
         for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
             ip6tables -D OUTPUT -d $BYPASSIPV6 -j ACCEPT
         done
 
-        echo -e "DEBUG: Current iptables rules:\n `iptables -L`"
         iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
         iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
         for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
@@ -126,27 +129,37 @@ start_xgpl() {
         done
     fi
 
+    if [[ $DEBUG -eq 1 ]]; then
+        echo -e "DEBUG: IPv4 mangle table:\n `iptables -t mangle -L`"
+        echo -e "DEBUG: IPv6 mangle table:\n `ip6tables -t mangle -L`"
+
+        echo -e "DEBUG: IPv4 nat table:\n `iptables -t nat -L`"
+        echo -e "DEBUG: IPv6 nat table:\n `ip6tables -t nat -L`"
+    fi
+
     # add iptables rules
-    if ! check_iptables_rule_exist "-t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr"; then
+    if ! iptables -t nat -C POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr > /dev/null; then
         iptables -t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr
-        ip6tables -t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv6Addr
+        if [[ -n "$mainIPv6Addr" && -n "$mainIPv6AddrMask" ]]; then
+            ip6tables -t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv6Addr
+        fi
     fi
 
     for BYPASSUSER in ${BYPASSUSERS[@]}; do
-        if ! check_iptables_rule_exist "-t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333"; then
+        if ! iptables -t mangle -C OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333 > /dev/null; then
             iptables -t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
             ip6tables -t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
         fi
     done
 
     for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
-        if ! check_iptables_rule_exist "-t mangle -A OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333"; then
+        if ! iptables -t mangle -C OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333 > /dev/null; then
             iptables -t mangle -A OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333
         fi
     done
 
     for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
-        if ! check_iptables_rule_exist "-t mangle -A OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333"; then
+        if ! iptables -t mangle -C OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333 > /dev/null; then
             ip6tables -t mangle -A OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333
         fi
     done
@@ -168,7 +181,14 @@ stop_xgpl(){
     killall /usr/local/bin/tun2socks
 
     echo -e "LOG: Flushing iptables rules..."
-    echo -e "DEBUG: need delete iptables rule: $RMIPTABLESRULE \nmangle table:\n `iptables -t mangle -L`"
+    if [[ $DEBUG -eq 1 ]]; then
+        echo -e "DEBUG: Current mangle iptables rules:\n`iptables -t mangle -L`"
+        echo -e "DEBUG: Current magle ip6tables rules:\n`ip6tables -t mangle -L`"
+
+        echo -e "DEBUG: Current nat iptables rules:\n`iptables -t nat -L`"
+        echo -e "DEBUG: Current nat ip6tables rules:\n`ip6tables -t nat -L`"
+    fi
+
     for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
         ip6tables -t mangle -D OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333
     done
@@ -183,24 +203,34 @@ stop_xgpl(){
     done
 
     iptables -t nat -D POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr
-    ip6tables -t nat -D POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv6Addr
+    if [[ -n "$mainIPv6Addr" && -n "$mainIPv6AddrMask" ]]; then
+        ip6tables -t nat -D POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv6Addr
+    fi
 
     echo -e "LOG: Flushing routing rules..."
-    echo -e "DEBUG: Current IPv4 routing rules:\n`ip -4 rule list`"
-    echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
+    if [[ $DEBUG -eq 1 ]]; then
+        echo -e "DEBUG: Current IPv4 routing rules:\n`ip -4 rule list`"
+        echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
+    fi
+
     ip -4 rule del fwmark 23333 lookup main
     ip -6 rule del fwmark 23333 lookup main
 
     ip -6 rule del prio 10002
-    ip -6 rule del prio 10001
+    if [[ -n "$mainIPv6Addr" && -n "$mainIPv6AddrMask" ]]; then
+        ip -6 rule del prio 10001
+    fi
 
     ip -4 rule del prio 10002
     ip -4 rule del prio 10001
     ip -4 rule del prio 10000
 
     echo -e "LOG: Flushing routing tables..."
-    echo -e "DEBUG: Current IPv4 routing table:\n`ip -4 route show table default`"
-    echo -e "DEBUG: Current IPv6 routing table:\n`ip -6 route show table default`"
+    if [[ $DEBUG -eq 1 ]]; then
+        echo -e "DEBUG: Current IPv4 routing table:\n`ip -4 route show table default`"
+        echo -e "DEBUG: Current IPv6 routing table:\n`ip -6 route show table default`"
+    fi
+
     ip -4 route flush table default
     ip -6 route flush table default
 
@@ -210,14 +240,17 @@ stop_xgpl(){
 
     if [ $ONLYPROXYCONN -eq 1 ]; then
         echo -e "LOG: ONLYPROXYCONN set to 1, add iptables rules to block traffic..."
-        echo -e "DEBUG: Current iptables rules:\n`iptables -L`"
+        if [[ $DEBUG -eq 1 ]]; then
+            echo -e "DEBUG: Current iptables rules:\n`iptables -L`"
+            echo -e "DEBUG: Current ip6tables rules:\n `ip6tables -L`"
+        fi
+
         for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
             iptables -I OUTPUT 1 -d $BYPASSIPV4 -j ACCEPT
         done
         iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
         iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
 
-        echo -e "DEBUG: Current ip6tables rules:\n `ip6tables -L`"
         for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
             ip6tables -I OUTPUT 1 -d $BYPASSIPV6 -j ACCEPT
         done
@@ -252,6 +285,11 @@ check_variable "${BYPASSIPV4S[0]}" "BYPASSIPV4S"
 check_variable "${BYPASSIPV6S[0]}" "BYPASSIPV6S"
 
 
+
+if [[ "$*" == *"--debug"* ]]; then
+    DEBUG=1
+fi
+
 case "$1" in
     start)
         start_xgpl
@@ -267,5 +305,6 @@ case "$1" in
         exit 1
         ;;
 esac
+
 
 exit 0
