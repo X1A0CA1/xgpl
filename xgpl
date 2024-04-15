@@ -8,9 +8,12 @@ REMOTEIP="1.1.1.1"
 REMOTEPORT="1080"
 USERNAME="username"
 PASSWD="password"
+ONLYPROXYCONN=1
+
 BYPASSUSERS=("bypass")
 BYPASSIPV4S=("1.1.1.1" "1.0.0.1")
-ONLYPROXYCONN=1
+BYPASSIPV6S=("2606:4700:4700::1111" "2606:4700:4700::1001")
+
 
 
 ############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
@@ -27,12 +30,20 @@ fi
 if [ -z "$mainIPv6Addr" ]; then
     echo -e "WARNING: Can't find a global IPv6 address. You may meet some unexpected errors :)."
 fi
+script_path=$(readlink -f "$0")
 
 
 check_iptables_rule_exist() {
     local rule="$1"
     iptables -C "$rule" >/dev/null 2>&1
     return $?
+}
+
+check_variable() {
+    if [[ -z "$1" ]]; then
+        echo -e "Error: $2 is not set, please edit $script_path"
+        exit 0
+    fi
 }
 
 
@@ -103,10 +114,16 @@ start_xgpl() {
         echo -e "DEBUG: Current iptables rules:\n`ip6tables -L`"
         ip6tables -D OUTPUT -j REJECT
         ip6tables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
+        for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
+            ip6tables -D OUTPUT -d $BYPASSIPV6 -j ACCEPT
+        done
 
         echo -e "DEBUG: Current iptables rules:\n `iptables -L`"
         iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
         iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
+        for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
+            iptables -D OUTPUT -d $BYPASSIPV4 -j ACCEPT
+        done
     fi
 
     # add iptables rules
@@ -128,6 +145,12 @@ start_xgpl() {
         fi
     done
 
+    for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
+        if ! check_iptables_rule_exist "-t mangle -A OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333"; then
+            ip6tables -t mangle -A OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333
+        fi
+    done
+
     echo -e "LOG: Starting tun2socks..."
     nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device "$TUNDEVICE" >> /var/log/tun2sockt.log &
     echo -e "LOG: xgpl started"
@@ -146,6 +169,10 @@ stop_xgpl(){
 
     echo -e "LOG: Flushing iptables rules..."
     echo -e "DEBUG: need delete iptables rule: $RMIPTABLESRULE \nmangle table:\n `iptables -t mangle -L`"
+    for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
+        ip6tables -t mangle -D OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333
+    done
+    
     for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
         iptables -t mangle -D OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333
     done
@@ -184,44 +211,19 @@ stop_xgpl(){
     if [ $ONLYPROXYCONN -eq 1 ]; then
         echo -e "LOG: ONLYPROXYCONN set to 1, add iptables rules to block traffic..."
         echo -e "DEBUG: Current iptables rules:\n`iptables -L`"
+        for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
+            iptables -I OUTPUT 1 -d $BYPASSIPV4 -j ACCEPT
+        done
         iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
         iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
 
         echo -e "DEBUG: Current ip6tables rules:\n `ip6tables -L`"
+        for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
+            ip6tables -I OUTPUT 1 -d $BYPASSIPV6 -j ACCEPT
+        done
         ip6tables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
         ip6tables -A OUTPUT -j REJECT
     fi
-
-
-    # iptables -t mangle -D POSTROUTING ! -d $REMOTEIP -j DROP
-    # iptables -t mangle -D POSTROUTING 1 -p tcp --sport $sshPort -j ACCEPT
-
-    # echo -e "Stopping xgpl..."
-
-    # mainGatewayIP=$(ip route show table default | grep default | awk '{print $3}' | head -n 1)
-
-    # killall /usr/local/bin/tun2socks
-
-    # ip -6 route del ::/1 dev $TUNDEVICE
-
-    # ip route del default via $(ip -4 address show dev $TUNDEVICE | grep inet | awk '{print $2}' | cut -d'/' -f1 | head -n 1)
-    # ip route add default via $mainGatewayIP dev $ETHDEV table main
-    # ip rule del to $REMOTEIP lookup default
-    # ip rule del from $mainIPaddr lookup default
-    # ip route del default table default
-    
-    # ifconfig $TUNDEVICE down
-    # ip tuntap del dev $TUNDEVICE mode tun
-    
-    # # iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
-    # # iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
-    
-
-    # for ip in ${BYPASSIPV4S[@]}; do
-    #     ip rule del to $ip lookup default
-    #     iptables -D OUTPUT -d $ip -j ACCEPT
-    # done
-    # echo -e "xgpl stopped"
 }
 
 restart_xgpl(){
@@ -235,29 +237,19 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-script_path=$(readlink -f "$0")
+check_variable "$TUNDEVICE" "TUNDEVICE"
+check_variable "$TUNIPV4RANGE" "TUNIPV4RANGE"
+check_variable "$TUNIPV6RANGE" "TUNIPV6RANGE"
+check_variable "$ETHDEV" "ETHDEV"
+check_variable "$REMOTEIP" "REMOTEIP"
+check_variable "$REMOTEPORT" "REMOTEPORT"
+check_variable "$USERNAME" "USERNAME"
+check_variable "$PASSWD" "PASSWD"
+check_variable "$ONLYPROXYCONN" "ONLYPROXYCONN"
 
-declare -a variables=("TUNDEVICE" "TUNIPV4RANGE" "TUNIPV6RANGE" "ETHDEV" "REMOTEIP" "REMOTEPORT" "USERNAME" "PASSWD")
-
-for var in "${variables[@]}"; do
-    if [ -z "${!var}" ]; then
-        echo -e "$var 变量为空，请修改本文件开头的变量"
-        echo -e "本文件的路径：$script_path"
-        exit 0
-    fi
-done
-
-if [ -z "${BYPASSIPV4S[0]}" ]; then
-    echo -e "BYPASSIPV4S 数组为空，请本文件开头的变量，修改为类似 BYPASSIPV4S=('1.1.1.1' '1.0.0.1') 的格式。"
-    echo -e "本文件的路径：$script_path"
-    exit 0
-fi
-
-if [ -z "${BYPASSUSERS[0]}" ]; then
-    echo -e "BYPASSUSERS 数组为空，请本文件开头的变量，修改为类似 BYPASSUSERS=('bypass') 的格式。"
-    echo -e "本文件的路径：$script_path"
-    exit 0
-fi
+check_variable "${BYPASSUSERS[0]}" "BYPASSUSERS"
+check_variable "${BYPASSIPV4S[0]}" "BYPASSIPV4S"
+check_variable "${BYPASSIPV6S[0]}" "BYPASSIPV6S"
 
 
 case "$1" in
