@@ -213,9 +213,8 @@ stop_xgpl(){
         echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
     fi
 
-    ip -4 rule del fwmark 23333 lookup main
-    ip -6 rule del fwmark 23333 lookup main
-
+    ip -4 rule prio 9999
+    ip -6 rule prio 9999
     ip -6 rule del prio 10002
     if [[ -n "$mainIPv6Addr" && -n "$mainIPv6AddrMask" ]]; then
         ip -6 rule del prio 10001
