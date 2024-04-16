@@ -19,10 +19,24 @@ DEBUG=0
 
 ############################# 如果你不知道你在做什么，请不要修改下述内容 ################################
 #########  If you're unsure of what you're doing, refrain from altering the following.  ##########
-mainIPv4Addr=$(ip -4 address show dev $ETHDEV | grep inet | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
-mainIPv6Addr=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
-mainIPv6AddrMask=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f2 | head -n 1)
-sshPort=$(ss -tlnp | grep ssh | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
+retry_count=0
+max_retries=15
+retry_interval=1
+while [ $retry_count -lt $max_retries ]; do
+    mainIPv4Addr=$(ip -4 address show dev $ETHDEV | grep inet | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
+    sshPort=$(ss -tlnp | grep ssh | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
+    mainIPv6Addr=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
+    mainIPv6AddrMask=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f2 | head -n 1)
+
+    if [ -n "$mainIPv6Addr" ] && [ -n "$mainIPv6AddrMask" ] && [ -n "$mainIPv4Addr"] && [ -n "$sshPort" ]; then
+        break
+    else
+        echo "Retry $((retry_count+1))/$max_retries: Key variable cannot be found, retry..."
+        sleep $retry_interval
+        retry_count=$((retry_count+1))
+    fi
+done
+
 if [ -z "$mainIPv4Addr" ]; then
     echo -e "FATAL: Can't find a global IPv4 address, please check your network configuration."
     exit 1
@@ -31,6 +45,12 @@ fi
 if [ -z "$mainIPv6Addr" ]; then
     echo -e "WARNING: Can't find a global IPv6 address. You may meet some unexpected errors :)."
 fi
+
+if [ -z "$sshPort" ]; then
+    sshPort=22
+    echo -e "WARNING: Can't find the SSH port, defaulting to 22."
+fi
+
 script_path=$(readlink -f "$0")
 
 check_variable() {
@@ -248,12 +268,14 @@ stop_xgpl(){
             iptables -I OUTPUT 1 -d $BYPASSIPV4 -j ACCEPT
         done
         iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+        iptables -I OUTPUT 1 -p udp --dport 67 -j ACCEPT
         iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
 
         for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
             ip6tables -I OUTPUT 1 -d $BYPASSIPV6 -j ACCEPT
         done
         ip6tables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+        ip6tables -I OUTPUT 1 -p udp --dport 546 -j ACCEPT
         ip6tables -A OUTPUT -j REJECT
     fi
 }
