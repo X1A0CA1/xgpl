@@ -103,8 +103,8 @@ start_xgpl() {
     ip -6 rule add from all lookup default prio 10002
     
     # If a watermarked packet is encountered, It means that the packet needs to be routing to main table. 
-    ip -4 rule add fwmark 23333 lookup main
-    ip -6 rule add fwmark 23333 lookup main
+    ip -4 rule add fwmark 23333 lookup main prio 9999
+    ip -6 rule add fwmark 23333 lookup main prio 9999
 
     # Set up iptables rules
     echo -e "LOG: Setting up iptables rules..."
