@@ -134,6 +134,13 @@ function install_server {
     ]
 }
 EOF
+    if [ ! -d "/var/log" ]; then
+        mkdir -p /var/log
+    fi
+
+    if [ ! -f "/var/log/gost.log" ]; then
+        touch /var/log/gost.log
+    fi
     cat > "/etc/systemd/system/gost.service" <<EOF
 [Unit]
 Description=GOST PROXY SERVER
@@ -141,7 +148,9 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/gost -C $configFile >> /var/log/gost.log
+ExecStart=/usr/local/bin/gost -C $configFile
+StandardOutput=append:/var/log/gost.log
+StandardError=append:/var/log/gost.log
 Restart=always
 RestartSec=10s
 
