@@ -141,7 +141,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/gost -C $configFile
+ExecStart=/usr/local/bin/gost -C $configFile >> /var/log/gost.log
 Restart=always
 RestartSec=10s
 
