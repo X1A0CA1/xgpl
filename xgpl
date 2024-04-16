@@ -28,7 +28,7 @@ while [ $retry_count -lt $max_retries ]; do
     mainIPv6Addr=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f1 | head -n 1)
     mainIPv6AddrMask=$(ip -6 address show dev $ETHDEV | grep inet6 | grep global | awk '{print $2}' | cut -d '/' -f2 | head -n 1)
 
-    if [ -n "$mainIPv6Addr" ] && [ -n "$mainIPv6AddrMask" ] && [ -n "$mainIPv4Addr"] && [ -n "$sshPort" ]; then
+    if [ -n "$mainIPv6Addr" ] && [ -n "$mainIPv6AddrMask" ] && [ -n "$mainIPv4Addr" ] && [ -n "$sshPort" ]; then
         break
     else
         echo "Retry $((retry_count+1))/$max_retries: Key variable cannot be found, retry..."
@@ -129,7 +129,7 @@ start_xgpl() {
     # Set up iptables rules
     echo -e "LOG: Setting up iptables rules..."
     # check if ONLYPROXYCONN was set
-    if iptables -C OUTPUT ! -d $REMOTEIP -j REJECT > /dev/null; then
+    if iptables -C OUTPUT ! -d $REMOTEIP -j REJECT > /dev/null 2>&1; then
         echo -e "LOG: It looks like ONLYPROXYCONN was set to 1 the last time xgpl stopped, delete iptables rules to unblock traffic..."
         if [[ $DEBUG -eq 1 ]]; then
             echo -e "DEBUG: Current iptables rules:\n`iptables -L`"
@@ -137,12 +137,14 @@ start_xgpl() {
         fi
 
         ip6tables -D OUTPUT -j REJECT
+        ip6tables -D OUTPUT -p udp --dport 546 -j ACCEPT
         ip6tables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
         for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
             ip6tables -D OUTPUT -d $BYPASSIPV6 -j ACCEPT
         done
 
         iptables -D OUTPUT ! -d $REMOTEIP -j REJECT
+        iptables -D OUTPUT -p udp --dport 67 -j ACCEPT
         iptables -D OUTPUT -p tcp --sport $sshPort -j ACCEPT
         for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
             iptables -D OUTPUT -d $BYPASSIPV4 -j ACCEPT
@@ -158,7 +160,7 @@ start_xgpl() {
     fi
 
     # add iptables rules
-    if ! iptables -t nat -C POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr > /dev/null; then
+    if ! iptables -t nat -C POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr > /dev/null 2>&1; then
         iptables -t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv4Addr
         if [[ -n "$mainIPv6Addr" && -n "$mainIPv6AddrMask" ]]; then
             ip6tables -t nat -A POSTROUTING -m mark --mark 23333 -j SNAT --to $mainIPv6Addr
@@ -166,20 +168,20 @@ start_xgpl() {
     fi
 
     for BYPASSUSER in ${BYPASSUSERS[@]}; do
-        if ! iptables -t mangle -C OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333 > /dev/null; then
+        if ! iptables -t mangle -C OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333 > /dev/null 2>&1; then
             iptables -t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
             ip6tables -t mangle -A OUTPUT -m owner --uid-owner $BYPASSUSER -j MARK --set-mark 23333
         fi
     done
 
     for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
-        if ! iptables -t mangle -C OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333 > /dev/null; then
+        if ! iptables -t mangle -C OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333 > /dev/null 2>&1; then
             iptables -t mangle -A OUTPUT -d $BYPASSIPV4 -j MARK --set-mark 23333
         fi
     done
 
     for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
-        if ! iptables -t mangle -C OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333 > /dev/null; then
+        if ! iptables -t mangle -C OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333 > /dev/null 2>&1; then
             ip6tables -t mangle -A OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333
         fi
     done
@@ -233,8 +235,8 @@ stop_xgpl(){
         echo -e "DEBUG: Current IPv6 routing rules:\n`ip -6 rule list`"
     fi
 
-    ip -4 rule prio 9999
-    ip -6 rule prio 9999
+    ip -4 rule del prio 9999
+    ip -6 rule del prio 9999
     ip -6 rule del prio 10002
     if [[ -n "$mainIPv6Addr" && -n "$mainIPv6AddrMask" ]]; then
         ip -6 rule del prio 10001
@@ -265,18 +267,35 @@ stop_xgpl(){
         fi
 
         for BYPASSIPV4 in ${BYPASSIPV4S[@]}; do
-            iptables -I OUTPUT 1 -d $BYPASSIPV4 -j ACCEPT
+            if ! iptables -C OUTPUT -d $BYPASSIPV4 -j ACCEPT > /dev/null 2>&1; then
+                iptables -I OUTPUT 1 -d $BYPASSIPV4 -j ACCEPT
+            fi
         done
-        iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
-        iptables -I OUTPUT 1 -p udp --dport 67 -j ACCEPT
-        iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
+
+        if ! iptables -C OUTPUT -p tcp --sport $sshPort -j ACCEPT > /dev/null 2>&1; then
+            iptables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+        fi
+        if ! iptables -C OUTPUT -p udp --dport 67 -j ACCEPT > /dev/null 2>&1; then
+            iptables -I OUTPUT 1 -p udp --dport 67 -j ACCEPT
+        fi
+        if ! iptables -C OUTPUT ! -d $REMOTEIP -j REJECT > /dev/null 2>&1; then
+            iptables -A OUTPUT ! -d $REMOTEIP -j REJECT
+        fi
 
         for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
-            ip6tables -I OUTPUT 1 -d $BYPASSIPV6 -j ACCEPT
+            if ! ip6tables -C OUTPUT -d $BYPASSIPV6 -j ACCEPT > /dev/null 2>&1; then
+                ip6tables -I OUTPUT 1 -d $BYPASSIPV6 -j ACCEPT
+            fi
         done
-        ip6tables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
-        ip6tables -I OUTPUT 1 -p udp --dport 546 -j ACCEPT
-        ip6tables -A OUTPUT -j REJECT
+        if ! ip6tables -C OUTPUT -p tcp --sport $sshPort -j ACCEPT > /dev/null 2>&1; then
+            ip6tables -I OUTPUT 1 -p tcp --sport $sshPort -j ACCEPT
+        fi
+        if ! ip6tables -C OUTPUT -p udp --dport 546 -j ACCEPT > /dev/null 2>&1; then
+            ip6tables -I OUTPUT 1 -p udp --dport 546 -j ACCEPT
+        fi
+        if ! ip6tables -C OUTPUT -j REJECT > /dev/null 2>&1; then
+            ip6tables -A OUTPUT -j REJECT
+        fi
     fi
 }
 
