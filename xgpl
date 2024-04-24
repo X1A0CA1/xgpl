@@ -13,6 +13,7 @@ ONLYPROXYCONN=1
 BYPASSUSERS=("bypass")
 BYPASSIPV4S=("1.1.1.1" "1.0.0.1")
 BYPASSIPV6S=("2606:4700:4700::1111" "2606:4700:4700::1001")
+BYPASSINPUTPORTS=("22")
 
 DEBUG=0
 
@@ -186,6 +187,17 @@ start_xgpl() {
         fi
     done
 
+    for BYPASSINPUTPORT in ${BYPASSINPUTPORTS[@]}; do
+        if ! iptables -t mangle -C PREROUTING -p tcp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333 > /dev/null 2>&1; then
+            iptables -t mangle -A PREROUTING -p tcp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+            ip6tables -t mangle -A PREROUTING -p tcp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+        fi
+        if ! iptables -t mangle -C PREROUTING -p udp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333 > /dev/null 2>&1; then
+            iptables -t mangle -A PREROUTING -p udp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+            ip6tables -t mangle -A PREROUTING -p udp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+        fi
+    done
+
     echo -e "LOG: Starting tun2socks..."
     nohup /usr/local/bin/tun2socks -proxy socks5://$USERNAME:$PASSWD@$REMOTEIP:$REMOTEPORT -device "$TUNDEVICE" >> /var/log/tun2sockt.log &
     echo -e "LOG: xgpl started"
@@ -210,6 +222,12 @@ stop_xgpl(){
         echo -e "DEBUG: Current nat iptables rules:\n`iptables -t nat -L`"
         echo -e "DEBUG: Current nat ip6tables rules:\n`ip6tables -t nat -L`"
     fi
+    for BYPASSINPUTPORT in ${BYPASSINPUTPORTS[@]}; do
+        iptables -t mangle -D PREROUTING -p tcp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+        ip6tables -t mangle -D PREROUTING -p tcp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+        iptables -t mangle -D PREROUTING -p udp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+        ip6tables -t mangle -D PREROUTING -p udp --sport $BYPASSINPUTPORT -j MARK --set-mark 23333
+    done
 
     for BYPASSIPV6 in ${BYPASSIPV6S[@]}; do
         ip6tables -t mangle -D OUTPUT -d $BYPASSIPV6 -j MARK --set-mark 23333
